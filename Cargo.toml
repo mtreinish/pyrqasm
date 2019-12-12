@@ -1,0 +1,19 @@
+[package]
+name = "pyrqasm"
+version = "0.0.1"
+authors = ["Matthew Treinish <mtreinish@kortar.org>"]
+license = "Apache-2.0"
+readme = "README.rst"
+edition = "2018"
+
+[lib]
+name = "pyrqasm"
+crate-type = ["cdylib"]
+
+[dependencies]
+qasm = "1.0.0"
+regex = "1"
+
+[dependencies.pyo3]
+version = "0.8.3"
+features = ["extension-module"]
