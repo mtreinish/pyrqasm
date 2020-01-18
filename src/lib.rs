@@ -118,6 +118,7 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
     let ast = match parse(&mut tokens) {
         Ok(ast) => ast,
         Err(_error) => {
+            println!("{}", _error);
             return Err(InvalidNodeType::py_err("Parser Error"))
         }
     };
@@ -188,10 +189,11 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
             }
             AstNode::QReg(name, num) => {
                 let raw_qreg = qiskit.call_method1("QuantumRegister", (num, &name))?;
-                let qreg = raw_qreg.to_object(py);
-                qregs.insert(name, qreg);
-                let out_params = PyTuple::new(py, &qregs);
+                //let qreg_tup  = raw_qreg.extract()?;
+                let qreg_obj = raw_qreg.to_object(py);
+                let out_params = PyTuple::new(py, &[&qreg_obj]);
                 qc.call_method1(py, "add_register", out_params)?;
+                qregs.insert(name, qreg_obj);
             }
             AstNode::CReg(name, num) => {
                 let raw_creg = qiskit.call_method1("ClassicalRegister", (num, &name))?;
@@ -207,11 +209,15 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
                 for qubit in qubits {
                     match qubit {
                         Argument::Register(reg_name) => {
-                            out_qubits.push(qregs.get(&reg_name).unwrap());
-
+                            let qreg_obj = qregs.get(&reg_name).unwrap();
+                            let qreg_out = qreg_obj.clone_ref(py);
+                            out_qubits.push(&qreg_out);
                         }
                         Argument::Qubit(reg_name, index) => {
-
+                            let qreg_obj = qregs.get(&reg_name).unwrap();
+                            let qubit_vec: Vec<PyObject> = qreg_obj.extract(py)?;
+                            let q_out = qubit_vec.get(index as usize).unwrap();
+                            out_qubits.push(q_out);
                         }
                     }
                 }
@@ -223,17 +229,45 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
                 } else if gates.contains_key(&lc_name) {
                     let raw_gate = gates.get(&lc_name).unwrap();
                     let gate = raw_gate.call1(py, out_params)?;
-                    
-
                     qc.call_method1(py, "append", (gate, out_qubits))?;
                 }
             }
             AstNode::Barrier(arg) => {
+                match arg {
+                    Argument::Register(reg_name) => {
+                        let qreg_obj = qregs.get(&reg_name).unwrap();
+                        let out_params = PyTuple::new(py, &[&qreg_obj]);
+                        qc.call_method1(py, "barrier", out_params)?;
+                    }
+                    Argument::Qubit(reg_name, index) => {
+                        let qreg_obj = qregs.get(&reg_name).unwrap();
+                        let qubit_vec: Vec<PyObject> = qreg_obj.extract(py)?;
+                        let q_out = qubit_vec.get(index as usize).unwrap();
+                        let out_params = PyTuple::new(py, &[&q_out]);
+                        qc.call_method1(py, "barrier", out_params)?;
+                    }
+                }
 
 
             }
             AstNode::Reset(arg) => {
-                
+                match arg {
+                    Argument::Register(reg_name) => {
+                        let qreg_obj = qregs.get(&reg_name).unwrap();
+                        let qubit_vec: Vec<PyObject> = qreg_obj.extract(py)?;
+                        for q_out in qubit_vec {
+                            let out_params = PyTuple::new(py, &[&q_out]);
+                            qc.call_method1(py, "barrier", out_params)?;
+                        }
+                    }
+                    Argument::Qubit(reg_name, index) => {
+                        let qreg_obj = qregs.get(&reg_name).unwrap();
+                        let qubit_vec: Vec<PyObject> = qreg_obj.extract(py)?;
+                        let q_out = qubit_vec.get(index as usize).unwrap();
+                        let out_params = PyTuple::new(py, &[&q_out]);
+                        qc.call_method1(py, "barrier", out_params)?;
+                    }
+                }
             }
             AstNode::Measure(qubit_arg, clbit_arg) => {
                 let qubit: &PyObject;

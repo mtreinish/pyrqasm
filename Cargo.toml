@@ -15,5 +15,5 @@ qasm = "1.0.0"
 regex = "1"
 
 [dependencies.pyo3]
-version = "0.8.3"
+version = "0.8.5"
 features = ["extension-module"]
