@@ -71,7 +71,6 @@ fn generate_qubit_list< 'a>(py: &'a Python, qubit_map: &mut HashMap<String, u8>,
     Ok(output)
 }
 
-
 fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
     let gil = Python::acquire_gil();
     let py = gil.python();
@@ -210,14 +209,13 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
                     match qubit {
                         Argument::Register(reg_name) => {
                             let qreg_obj = qregs.get(&reg_name).unwrap();
-                            let qreg_out = qreg_obj.clone_ref(py);
-                            out_qubits.push(&qreg_out);
+                            out_qubits.push(qreg_obj);
                         }
                         Argument::Qubit(reg_name, index) => {
                             let qreg_obj = qregs.get(&reg_name).unwrap();
                             let qubit_vec: Vec<PyObject> = qreg_obj.extract(py)?;
                             let q_out = qubit_vec.get(index as usize).unwrap();
-                            out_qubits.push(q_out);
+                            out_qubits.push(q_out.clone());
                         }
                     }
                 }
@@ -225,11 +223,15 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
                 if standard_extension.contains_key(&lc_name) {
                     let raw_gate = standard_extension.get(&lc_name).unwrap();
                     let gate = raw_gate.call1(py, out_params)?;
-                    qc.call_method1(py, "append", (gate, out_qubits))?;
+                    let out_qubits_list = PyList::new(py, out_qubits);
+                    let out_params = PyTuple::new(py, &[gate, out_qubits_list.to_object(py)]);
+                    qc.call_method1(py, "append", out_params)?;
                 } else if gates.contains_key(&lc_name) {
                     let raw_gate = gates.get(&lc_name).unwrap();
                     let gate = raw_gate.call1(py, out_params)?;
-                    qc.call_method1(py, "append", (gate, out_qubits))?;
+                    let out_qubits_list = PyList::new(py, out_qubits);
+                    let out_params = PyTuple::new(py, &[gate, out_qubits_list.to_object(py)]);
+                    qc.call_method1(py, "append", out_params)?;
                 }
             }
             AstNode::Barrier(arg) => {
