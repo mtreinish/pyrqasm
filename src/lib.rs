@@ -21,7 +21,7 @@ use std::io::prelude::*;
 use std::path::Path;
 
 use pyo3::create_exception;
-use pyo3::exceptions::Exception;
+use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PySequence, PyTuple};
 use pyo3::wrap_pyfunction;
@@ -66,7 +66,7 @@ fn generate_qubit_list<'a>(
     let mut out_qubits: Vec<u8> = Vec::new();
     for qubit in qubits {
         if !qubit_map.contains_key(&qubit) {
-            return Err(InvalidQubit::py_err("Qubit not defined"));
+            return Err(InvalidQubit::new_err("Qubit not defined"));
         }
         out_qubits.push(*qubit_map.get(&qubit).unwrap())
     }
@@ -199,7 +199,7 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
         Ok(ast) => ast,
         Err(_error) => {
             println!("{}", _error);
-            return Err(InvalidNodeType::py_err("Parser Error"));
+            return Err(InvalidNodeType::new_err("Parser Error"));
         }
     };
     let raw_circ = qiskit.call0("QuantumCircuit")?;
@@ -291,7 +291,7 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
                             }
                         }
                         _ => {
-                            return Err(InvalidNodeType::py_err(
+                            return Err(InvalidNodeType::new_err(
                                 "Invalid Node type",
                             ))
                         }
@@ -331,19 +331,29 @@ fn qasm_ast_to_circuit(source: String) -> PyResult<PyObject> {
             AstNode::ApplyGate(name, qubits, params) => {
                 let lc_name = name.to_ascii_lowercase();
                 let out_params = PyTuple::new(py, params);
-                let mut out_qubits: Vec<&PyObject> = Vec::new();
+                let mut out_qubits: Vec<PyObject> = Vec::new();
+                let mut registers: HashMap <String, Vec<PyObject>> = HashMap::new();
                 for qubit in qubits {
+                    let qubit_tmp: PyObject;
                     match qubit {
                         Argument::Register(reg_name) => {
                             let qreg_obj = qregs.get(&reg_name).unwrap();
-                            out_qubits.push(qreg_obj);
+                            out_qubits.push(qreg_obj.clone_ref(py));
                         }
                         Argument::Qubit(reg_name, index) => {
-                            let qreg_obj = qregs.get(&reg_name).unwrap();
-                            let qubit_vec: Vec<PyObject> =
-                                qreg_obj.extract(py)?;
-                            let q_out = qubit_vec.get(index as usize).unwrap();
-                            out_qubits.push(q_out.clone());
+                            if registers.contains_key(&reg_name) {
+                                let register = registers.get(&reg_name).unwrap();
+                                out_qubits.push(register.get(index as usize).unwrap().clone_ref(py));
+                            } else {
+                                let qreg_obj = qregs.get(&reg_name).unwrap();
+                                let qubit_vec: Vec<PyObject> =
+                                    qreg_obj.extract(py)?;
+                                let qubit_tmp_orig = &qubit_vec.get(index as usize).unwrap();
+                                let qubit_clone = qubit_tmp_orig.clone_ref(py);
+                                qubit_tmp = qubit_clone;
+                                registers.insert(reg_name.to_string(), qubit_vec);
+                                out_qubits.push(qubit_tmp)
+                            }
                         }
                     }
                 }
@@ -461,8 +471,8 @@ fn pyrqasm(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-create_exception!(pyrqasm, InvalidQubit, Exception);
-create_exception!(pyrqasm, InvalidNodeType, Exception);
+create_exception!(pyrqasm, InvalidQubit, PyException);
+create_exception!(pyrqasm, InvalidNodeType, PyException);
 
 #[cfg(test)]
 mod tests {
